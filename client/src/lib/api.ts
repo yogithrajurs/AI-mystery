@@ -1,4 +1,4 @@
-export const API = import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api/v1';
+export const API = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? '/api/v1' : 'http://localhost:5000/api/v1');
 export type CaseInfo = { id: string; title: string; summary: string; genre: string; difficulty: string; status: string; suspectCount: number; evidenceCount: number };
 export type Suspect = { id: string; name: string; role: string; background: string; publicMotive: string; statement: string; publicAlibi: string; displayOrder: number };
 export type Evidence = { id: string; type: string; title: string; description: string; content: Record<string, unknown>; relatedSuspectIds: string[]; occurredAt?: string; displayOrder: number };

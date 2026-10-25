@@ -10,7 +10,7 @@ const [{ connectDatabase }, { env }, { default: app }] = await Promise.all([
 
 try {
   await connectDatabase();
-  app.listen(env.PORT, () => console.log(`AI Mystery Room API listening on port ${env.PORT}`));
+  app.listen(env.PORT, '0.0.0.0', () => console.log(`AI Mystery Room listening on port ${env.PORT}`));
 } catch (error) {
   console.error('Unable to connect to MongoDB. Check MONGODB_URI and confirm the database is available.');
   process.exitCode = 1;

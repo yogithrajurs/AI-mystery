@@ -4,6 +4,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import pino from 'pino';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env } from './config/env.js';
 import { CaseModel, SuspectModel, EvidenceModel, SolutionModel, ProgressModel, AccusationModel, JobModel } from './models.js';
 import { scenarioSchema } from './schemas.js';
@@ -12,6 +14,7 @@ import { runGeneration } from './services/generation.service.js';
 const log = pino({ level: env.NODE_ENV === 'development' ? 'debug' : 'info' });
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
 app.use(express.json({ limit: '32kb' }));
@@ -40,7 +43,8 @@ function session(req: Request, res: Response, next: NextFunction) {
 app.use(session);
 app.use((req, res, next) => { res.locals.requestId = randomUUID(); res.setHeader('X-Request-Id', res.locals.requestId); next(); });
 app.use((req, res, next) => {
-  if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method) && req.headers.origin && req.headers.origin !== env.CLIENT_URL) return res.status(403).json({ error: { code: 'ACCESS_DENIED', message: 'Request origin is not allowed.', requestId: res.locals.requestId } });
+  const requestOrigin = `${req.protocol}://${req.get('host')}`;
+  if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method) && req.headers.origin && req.headers.origin !== env.CLIENT_URL && req.headers.origin !== requestOrigin) return res.status(403).json({ error: { code: 'ACCESS_DENIED', message: 'Request origin is not allowed.', requestId: res.locals.requestId } });
   next();
 });
 const createLimit = rateLimit({ windowMs: 60 * 60 * 1000, limit: env.MAX_CASES_PER_HOUR, standardHeaders: true, legacyHeaders: false, message: { error: { code: 'RATE_LIMITED', message: 'Mystery creation limit reached. Try again later.' } } });
@@ -112,6 +116,12 @@ app.post('/api/v1/cases/:caseId/accusations', accuseLimit, owner, async (req, re
 });
 app.get('/api/v1/cases/:caseId/result', owner, async (req, res, next) => {
   try { const done = await AccusationModel.exists({ caseId: req.params.caseId, ownerSessionId: res.locals.sessionId }); if (!done) return fail(res, 403, 'ACCESS_DENIED', 'Submit your final accusation to see the solution.'); const solution = await SolutionModel.findOne({ caseId: req.params.caseId }).lean(); const culprit = solution && await SuspectModel.findById(solution.culpritId).lean(); if (!solution) return fail(res, 404, 'CASE_NOT_FOUND', 'The solution could not be found.'); res.json({ culpritId: solution.culpritId, culpritName: culprit?.name, motive: solution.motive, methodSummary: solution.methodSummary, reasoning: solution.reasoning, decisiveEvidenceIds: solution.decisiveEvidenceIds, eventSequence: solution.eventSequence, redHerringExplanations: solution.redHerringExplanations }); } catch (e) { next(e); }
+});
+const clientBuildPath = fileURLToPath(new URL('../../client/dist/', import.meta.url));
+app.use(express.static(clientBuildPath, { index: false, maxAge: env.NODE_ENV === 'production' ? '1h' : 0 }));
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/health/')) return fail(res, 404, 'CASE_NOT_FOUND', 'The requested endpoint could not be found.');
+  res.sendFile(join(clientBuildPath, 'index.html'), { headers: { 'Cache-Control': 'no-cache' } }, (error) => { if (error) next(error); });
 });
 app.use((_req, res) => fail(res, 404, 'CASE_NOT_FOUND', 'The requested endpoint could not be found.'));
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => { const err = error as Error & { code?: number }; if (err.code === 11000) return fail(res, 409, 'ALREADY_SUBMITTED', 'A final accusation has already been submitted.'); log.error({ requestId: res.locals.requestId, message: err.message }, 'Request failed'); fail(res, 500, 'INTERNAL_ERROR', 'Something went wrong. Please try again.'); });

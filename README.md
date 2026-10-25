@@ -53,14 +53,42 @@ Base path: `/api/v1`
 
 Errors use `{ "error": { "code", "message", "requestId" } }`. Generation is asynchronous and bounded by `MAX_GENERATION_ATTEMPTS`. A case remains unavailable unless its structured output passes schema, reference, timeline, and clue-count validation.
 
-## Build and production
+## Deploy on Render
+
+This setup deploys the React client and Express API together as one Render web service, with MongoDB Atlas for data. The client uses the same-origin `/api/v1` path in production, so browser session cookies remain first-party.
+
+1. **Create the MongoDB database.** Create an Atlas project and cluster, add a database user, and copy the Node.js connection string. Add a strong database password and select the intended database name. Atlas blocks connections until the app's network is allowed; after Render creates the service, add the service's outbound IP ranges from its **Connect → Outbound** panel to Atlas **Network Access**. Avoid `0.0.0.0/0` for production because it permits connections from any IP.
+
+2. **Create a Gemini API key.** Generate a key in Google AI Studio. Keep it private; it belongs only in Render's server environment.
+
+3. **Push the project to a Git provider.** Commit the source and `render.yaml`. Confirm `.env` is not tracked (`.gitignore` excludes it). Do not commit your API key, database URI, or session secret.
+
+4. **Create the Render service from the Blueprint.** In Render, choose **New → Blueprint**, connect the repository, and let Render read `render.yaml`. Enter `MONGODB_URI` and `GEMINI_API_KEY` when prompted. Render generates `SESSION_SECRET`. The Blueprint builds the client and server, starts the web service, and checks `/health/ready`.
+
+5. **Wait for the first deploy.** The first build can start before Atlas allows Render's network ranges. If readiness fails, add the Render outbound ranges to Atlas Network Access, then use **Manual Deploy → Deploy latest commit** in Render.
+
+6. **Open the deployed service URL.** Render provides an HTTPS URL such as `https://your-service.onrender.com`. The home page and API are served from that same origin. `CLIENT_URL` does not need a production override for this single-origin setup.
+
+7. **Confirm the deployment.** Open `https://your-service.onrender.com/health/ready`; it should return `{"status":"ready","database":"connected"}`. Then load the home page, create a short fictional mystery, wait for generation, inspect evidence, and submit an accusation.
+
+### Render configuration
+
+The root [render.yaml](render.yaml) contains the service build/start commands, health check, safe non-secret defaults, and secret prompts. You can also create a Node web service manually with:
+
+- Build command: `npm ci --include=dev && npm run build`
+- Start command: `npm start`
+- Health check path: `/health/ready`
+
+Set `NODE_ENV=production`, `MONGODB_URI`, and `GEMINI_API_KEY`. Render supplies `PORT`; the server binds to `0.0.0.0`. Keep secrets in Render's environment settings. For production, review Atlas backups/retention and Gemini quota limits, and choose a Render plan that fits your traffic and availability needs.
+
+## Local build
 
 ```sh
 npm run build
-npm run start
+npm start
 ```
 
-Deploy the static Vite output and Node server separately or behind a reverse proxy. Use HTTPS, set production CORS to the exact client origin, configure MongoDB network rules and backups, and store secrets in the host's secret manager. Set `NODE_ENV=production` and a strong `SESSION_SECRET`. Configure request timeouts, monitoring, and rate limits against the Gemini quota before public launch.
+For local development, copy `.env.example` to `.env`, configure MongoDB and Gemini, then run `npm run dev` from the repository root. The Vite development client calls the API at `http://localhost:5000/api/v1`; production uses same-origin `/api/v1`.
 
 ## Current scope and limitations
 

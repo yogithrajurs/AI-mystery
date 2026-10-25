@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: ai-mystery-room
+    runtime: node
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SESSION_TTL_HOURS
+        value: "72"
+      - key: MAX_SCENARIO_LENGTH
+        value: "1000"
+      - key: MAX_GENERATION_ATTEMPTS
+        value: "3"
+      - key: MAX_CASES_PER_HOUR
+        value: "5"
